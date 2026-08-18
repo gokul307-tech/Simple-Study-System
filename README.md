@@ -23,3 +23,8 @@ Student System is an intelligent educational platform developed using Python, St
 
 ## Teacher
 ![Teacher](screenshots/teacher.png)
+
+
+## LINK
+
+**Click this link to see my website**
