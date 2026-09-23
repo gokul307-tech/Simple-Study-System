@@ -1,3 +1,5 @@
 study.db
 __pycache__/
 *.db
+.env
+.pytest_cache/
