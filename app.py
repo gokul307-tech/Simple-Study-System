@@ -10,7 +10,7 @@ from auth.authentication import authenticate, register_user
 from config import DB_PATH
 from database.connection import get_connection, init_database
 from database.repositories import Repository
-from services.ai_service import explain, make_quiz
+from services.ai_service import MaterialChunk, ask_teacher, make_quiz
 from services.pdf_service import extract_pdf
 
 st.set_page_config(page_title="Simple Study System", page_icon="📚", layout="wide")
@@ -58,6 +58,24 @@ def subjects(repo):
 def materials(connection, user_id, subject_id):
     rows = connection.execute("SELECT content FROM notes WHERE user_id=? AND subject_id=? UNION ALL SELECT extracted_text FROM documents WHERE user_id=? AND subject_id=?", (user_id, subject_id, user_id, subject_id)).fetchall()
     return [row[0] for row in rows if row[0]]
+
+
+def teacher_materials(connection, user_id, subject_id, topic_id=None):
+    query = "SELECT title, content, topic_id, topic_name FROM notes n LEFT JOIN topics t ON t.id=n.topic_id WHERE n.user_id=? AND n.subject_id=?"
+    params = [user_id, subject_id]
+    if topic_id:
+        query += " AND n.topic_id=?"
+        params.append(topic_id)
+    rows = connection.execute(query, params).fetchall()
+    chunks = [MaterialChunk(row["content"], row["title"], row["topic_name"] or "") for row in rows if row["content"]]
+    document_query = "SELECT filename, extracted_text, topic_id FROM documents WHERE user_id=? AND subject_id=?"
+    document_params = [user_id, subject_id]
+    if topic_id:
+        document_query += " AND topic_id=?"
+        document_params.append(topic_id)
+    rows = connection.execute(document_query, document_params).fetchall()
+    chunks.extend(MaterialChunk(row["extracted_text"], row["filename"]) for row in rows if row["extracted_text"])
+    return chunks
 
 
 def dashboard(repo, connection):
@@ -180,16 +198,51 @@ def marks_page(repo):
 
 
 def ai_page(repo, connection):
-    st.title("Offline Teacher")
+    st.title("AI Teacher")
     available = subjects(repo)
     if not available:
         st.info("Add notes and a subject first.")
         return
     selected = st.selectbox("Subject", list(available))
-    question = st.text_area("Ask a question")
-    style = st.selectbox("Explanation style", ["Beginner", "College", "Exam-oriented"])
-    if st.button("Answer"):
-        st.write(explain(question, materials(connection, repo.user_id, available[selected]), style))
+    subject_id = available[selected]
+    topic_options = {"All topics": None}
+    topic_options.update({row["name"]: row["id"] for row in repo.topics(subject_id)})
+    topic = st.selectbox("Topic (optional)", list(topic_options))
+    current_selection = (subject_id, topic_options[topic])
+    if st.session_state.get("teacher_selection") not in (None, current_selection):
+        st.session_state.pop("teacher_answer", None)
+    mode = st.selectbox("Explanation mode", ["Simple", "Detailed", "Exam"])
+    question = st.text_area("Your question", key="teacher_question")
+    if st.button("Ask AI Teacher", type="primary"):
+        try:
+            answer, used_ai, chunk_count = ask_teacher(question, selected, topic if topic != "All topics" else "", teacher_materials(connection, repo.user_id, subject_id, topic_options[topic]), mode)
+            st.session_state.teacher_answer = answer
+            st.session_state.teacher_used_ai = used_ai
+            st.session_state.teacher_chunk_count = chunk_count
+            st.session_state.teacher_context = (question, selected, topic, subject_id, topic_options[topic])
+            st.session_state.teacher_selection = current_selection
+        except ValueError as error:
+            st.error(str(error))
+    if st.session_state.get("teacher_answer"):
+        if st.session_state.get("teacher_used_ai"):
+            st.caption(f"AI Teacher · used {st.session_state.get('teacher_chunk_count', 0)} relevant note chunks")
+        else:
+            st.caption("Offline Teacher · AI provider unavailable or not configured")
+        st.markdown(st.session_state.teacher_answer)
+        st.write("Quick actions")
+        action_columns = st.columns(3)
+        actions = [("Explain more simply", "Simple"), ("Give an example", "Detailed"), ("Give an exam answer", "Exam")]
+        for column, (label, action_mode) in zip(action_columns, actions):
+            if column.button(label):
+                previous_question, previous_subject, previous_topic, previous_subject_id, previous_topic_id = st.session_state.teacher_context
+                try:
+                    answer, used_ai, chunk_count = ask_teacher(previous_question, previous_subject, previous_topic if previous_topic != "All topics" else "", teacher_materials(connection, repo.user_id, previous_subject_id, previous_topic_id), action_mode)
+                    st.session_state.teacher_answer = answer
+                    st.session_state.teacher_used_ai = used_ai
+                    st.session_state.teacher_chunk_count = chunk_count
+                    st.rerun()
+                except ValueError as error:
+                    st.error(str(error))
 
 
 def quiz_page(repo, connection):
