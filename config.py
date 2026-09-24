@@ -6,7 +6,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.getenv("STUDY_DB_PATH", BASE_DIR / "study.db"))
 AI_PROVIDER = os.getenv("AI_PROVIDER", "offline").lower()
-AI_MODEL = os.getenv("MODEL_NAME", "")
+AI_MODEL = os.getenv("AI_MODEL") or os.getenv("MODEL_NAME") or "openai/gpt-4o-mini"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 MAX_DOCUMENT_TEXT = 2_000_000
 
