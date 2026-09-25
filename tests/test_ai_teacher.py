@@ -25,7 +25,7 @@ def test_offline_teacher_modes(mode, heading):
 
 
 def test_empty_question_is_rejected():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Please enter a question"):
         ask_teacher("  ", "Algorithms", "", MATERIALS)
 
 
