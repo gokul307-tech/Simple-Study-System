@@ -61,20 +61,20 @@ def materials(connection, user_id, subject_id):
 
 
 def teacher_materials(connection, user_id, subject_id, topic_id=None):
-    query = "SELECT title, content, topic_id, topic_name FROM notes n LEFT JOIN topics t ON t.id=n.topic_id WHERE n.user_id=? AND n.subject_id=?"
+    query = "SELECT n.title, n.content, n.topic_id, t.name AS topic_name FROM notes n LEFT JOIN topics t ON t.id=n.topic_id WHERE n.user_id=? AND n.subject_id=?"
     params = [user_id, subject_id]
     if topic_id:
         query += " AND n.topic_id=?"
         params.append(topic_id)
     rows = connection.execute(query, params).fetchall()
     chunks = [MaterialChunk(row["content"], row["title"], row["topic_name"] or "") for row in rows if row["content"]]
-    document_query = "SELECT filename, extracted_text, topic_id FROM documents WHERE user_id=? AND subject_id=?"
+    document_query = "SELECT d.filename, d.extracted_text, d.topic_id, t.name AS topic_name FROM documents d LEFT JOIN topics t ON t.id=d.topic_id WHERE d.user_id=? AND d.subject_id=?"
     document_params = [user_id, subject_id]
     if topic_id:
         document_query += " AND topic_id=?"
         document_params.append(topic_id)
     rows = connection.execute(document_query, document_params).fetchall()
-    chunks.extend(MaterialChunk(row["extracted_text"], row["filename"]) for row in rows if row["extracted_text"])
+    chunks.extend(MaterialChunk(row["extracted_text"], row["filename"], row["topic_name"] or "") for row in rows if row["extracted_text"])
     return chunks
 
 
@@ -192,7 +192,7 @@ def marks_page(repo):
                 st.success(f"Saved: {mark:g}/{maximum:g} ({mark / maximum * 100:.1f}%).")
     rows = repo.marks()
     if rows:
-        st.dataframe([dict(row) for row in rows], use_container_width=True)
+        st.dataframe([dict(row) for row in rows], width="stretch")
     else:
         st.info("No marks available yet.")
 
@@ -225,7 +225,7 @@ def ai_page(repo, connection):
             st.error(str(error))
     if st.session_state.get("teacher_answer"):
         if st.session_state.get("teacher_used_ai"):
-            st.caption(f"AI Teacher · used {st.session_state.get('teacher_chunk_count', 0)} relevant note chunks")
+            st.caption(f"Based on {st.session_state.get('teacher_chunk_count', 0)} relevant study materials")
         else:
             st.caption("Offline Teacher · AI provider unavailable or not configured")
         st.markdown(st.session_state.teacher_answer)
@@ -305,7 +305,7 @@ def sessions_page(repo):
         if st.form_submit_button("Save session"):
             repo.add_session(available.get(subject), None, minutes, confidence, reflection)
             st.success("Session recorded.")
-    st.dataframe([dict(row) for row in repo.sessions()], use_container_width=True)
+    st.dataframe([dict(row) for row in repo.sessions()], width="stretch")
 
 
 def analytics_page(repo):
