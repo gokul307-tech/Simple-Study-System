@@ -91,8 +91,10 @@ def _llm_answer(question: str, subject: str, topic: str, mode: str, chunks: list
 def ask_teacher(question: str, subject: str, topic: str, materials: list[MaterialChunk | str], mode: str = "Simple") -> tuple[str, bool, int]:
     question = question.strip()
     if not question:
-        raise ValueError("Ask a question before calling the AI Teacher.")
+        raise ValueError("Please enter a question.")
     chunks = retrieve_chunks(question, materials)
+    if not chunks:
+        return _offline_answer(question, [], mode), False, 0
     try:
         return _llm_answer(question, subject, topic, mode, chunks), True, len(chunks)
     except (HTTPError, URLError, TimeoutError, OSError, RuntimeError, ValueError) as error:
